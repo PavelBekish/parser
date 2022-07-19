@@ -1,14 +1,13 @@
 import csv
 import re
 import requests
+import datetime
 from bs4 import BeautifulSoup
 
-URL = 'https://cars.av.by/filter?brands[0][brand]=8&year[min]=2020'
 HEADERS = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                          '(KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
            'accept': '*/*'}
 HOST = 'https://cars.av.by'
-FILE = 'cars.csv'
 
 
 def get_html(url, params=None):
@@ -76,17 +75,23 @@ def save_file(items, path):
             writer.writerow(row)
 
 
-def parse():
-    html = get_html(URL)
+def parse(brand, url):
+    html = get_html(url)
     cars = []
     page = 1
+    file = f'cars {brand}.csv'
     while html.status_code == 200:
         cars.extend(get_content(html.text))
         page += 1
-        html = get_html(URL, params={'page': page})
+        html = get_html(url, params={'page': page})
     else:
-        save_file(cars, FILE)
+        save_file(cars, file)
 
 
 if __name__ == '__main__':
-    parse()
+    brands = {'audi': 6, 'bmw': 8, 'mercedes-benz': 683, 'volkswagen': 1216, 'volvo': 1238}
+    now = datetime.datetime.now()
+    year = now.year - 2
+    for key, value in brands.items():
+        url = f'https://cars.av.by/filter?brands[0][brand]={value}&year[min]={year}'
+        parse(key, url)
