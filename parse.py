@@ -1,7 +1,8 @@
 import csv
 import re
-import requests
+import httpx
 import datetime
+import asyncio
 from bs4 import BeautifulSoup
 
 HEADERS = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -10,13 +11,14 @@ HEADERS = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 HOST = 'https://cars.av.by'
 
 
-def get_html(url, params=None):
-    r = requests.get(url, headers=HEADERS, params=params)
-    return r
+async def get_html(url, params=None):
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, headers=HEADERS, params=params)
+        return r
 
 
-def get_options(link):
-    html = get_html(link)
+async def get_options(link):
+    html = await get_html(link)
     options = {'Экстерьер': '', 'Системы безопасности': '', 'Подушки': '', 'Системы помощи': '', 'Интерьер': '',
                'Комфорт': '', 'Обогрев': '', 'Климат': '', 'Мультимедиа': ''}
 
@@ -34,7 +36,7 @@ def get_options(link):
     return options
 
 
-def get_content(html):
+async def get_content(html):
     soup = BeautifulSoup(html, 'html.parser')
     items = soup.find_all('div', class_='listing-item')
 
@@ -44,7 +46,7 @@ def get_content(html):
         price_usd = re.sub(r'\D', '', item.find('div', class_='listing-item__priceusd').get_text())
         link = HOST + item.find('a', class_='listing-item__link').get('href')
         year = re.sub(r'\D', '', item.find('div', class_='listing-item__params').next_element.get_text())
-        options = get_options(link)
+        options = await get_options(link)
 
         cars.append({
             'title': item.find('h3', class_='listing-item__title').get_text(),
@@ -58,7 +60,7 @@ def get_content(html):
     return cars
 
 
-def save_file(items, path):
+async def save_file(items, path):
     with open(path, 'w', newline='') as file:
         writer = csv.writer(file, delimiter=';')
         writer.writerow(['Марка', 'Ссылка', 'Цена (BYN)', 'Цена (USD)', 'Город', 'Год', 'Экстерьер',
@@ -75,23 +77,30 @@ def save_file(items, path):
             writer.writerow(row)
 
 
-def parse(brand, url):
-    html = get_html(url)
+async def parse(brand, url):
+    html = await get_html(url)
     cars = []
     page = 1
     file = f'cars {brand}.csv'
     while html.status_code == 200:
-        cars.extend(get_content(html.text))
+        cars.extend(await get_content(html.text))
         page += 1
-        html = get_html(url, params={'page': page})
+        html = await get_html(url, params={'page': page})
     else:
-        save_file(cars, file)
+        await save_file(cars, file)
 
 
-if __name__ == '__main__':
+async def main():
     brands = {'audi': 6, 'bmw': 8, 'mercedes-benz': 683, 'volkswagen': 1216, 'volvo': 1238}
     now = datetime.datetime.now()
     year = now.year - 2
+    tasks = []
     for key, value in brands.items():
         url = f'https://cars.av.by/filter?brands[0][brand]={value}&year[min]={year}'
-        parse(key, url)
+        task = asyncio.create_task(parse(key, url))
+        tasks.append(task)
+
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+if __name__ == '__main__':
+    asyncio.run(main())
